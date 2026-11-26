@@ -128,11 +128,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = (wsl.exe -d Ubuntu-24.04-devops -u mattew -- wslpath -a $env:GITHUB_WORKSPACE).Trim()
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve WSL source path' }
+          $source = '/mnt/' + $env:GITHUB_WORKSPACE.Substring(0,1).ToLowerInvariant() + $env:GITHUB_WORKSPACE.Substring(2).Replace('\','/')
           $target = "/home/mattew/devops-cd/$env:GITHUB_RUN_ID"
-          $command = "set -e; mkdir -p $target/ansible; cp -a $source/ansible/. $target/ansible/; chmod -R go-w $target/ansible; cd $target/ansible; /home/mattew/.local/bin/ansible-playbook site.yml -e app_tag=$env:GITHUB_SHA"
-          wsl.exe -d Ubuntu-24.04-devops -u mattew -- bash -lc $command
+          $command = "set -e; mkdir -p $target/ansible; cp -a $source/ansible/. $target/ansible/; chmod -R go-w $target/ansible; cd $target/ansible; /home/mattew/.local/bin/ansible-playbook site.yml -e app_tag=$env:GITHUB_SHA 2>&1"
+          wsl.exe -d Ubuntu-24.04-devops -u mattew --exec bash -lc $command
           if ($LASTEXITCODE -ne 0) { throw "Ansible failed: $LASTEXITCODE" }
       - name: Check through Nginx
         shell: powershell
