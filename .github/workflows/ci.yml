@@ -107,3 +107,38 @@ jobs:
         run: |
           docker push "${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${IMAGE_NAME}:latest"
+
+  deploy:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, devops-vm]
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-devops-vm
+      cancel-in-progress: false
+    env:
+      VM_HOST: 127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Deploy with Ansible
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (wsl.exe -d Ubuntu-24.04-devops -u mattew -- wslpath -a $env:GITHUB_WORKSPACE).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve WSL source path' }
+          $target = "/home/mattew/devops-cd/$env:GITHUB_RUN_ID"
+          $command = "set -e; mkdir -p $target/ansible; cp -a $source/ansible/. $target/ansible/; chmod -R go-w $target/ansible; cd $target/ansible; /home/mattew/.local/bin/ansible-playbook site.yml -e app_tag=$env:GITHUB_SHA"
+          wsl.exe -d Ubuntu-24.04-devops -u mattew -- bash -lc $command
+          if ($LASTEXITCODE -ne 0) { throw "Ansible failed: $LASTEXITCODE" }
+      - name: Check through Nginx
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $body = curl.exe --fail --silent --show-error --max-time 15 "http://$env:VM_HOST/health"
+          if ($LASTEXITCODE -ne 0) { throw "HTTP check failed: $LASTEXITCODE" }
+          Write-Output $body
+          if (($body | ConvertFrom-Json).status -ne 'ok') { throw 'Unexpected health payload' }
